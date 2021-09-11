@@ -1,0 +1,63 @@
+#KL divergence 
+KL<-function(exp1,exp2){
+  mu1<-mean(exp1)
+  mu2<-mean(exp2)
+  var1<-var(exp1)+0.000001
+  var2<-var(exp2)+0.000001
+  kl_cis<-0.5*(log(var2/var1)+(var1+(mu1-mu2)^2)/var2-1)
+  kl_trans<-0.5*(log(var1/var2)+(var2+(mu2-mu1)^2)/var1-1)
+  kl<-0.5*(kl_cis+kl_trans)
+  return(kl)
+}
+#calculate statistic significance
+p.val<-function(kl,kl.null){
+  kl.null.log<-log(kl.null)
+  kl.log<-log(kl)
+  kl.null.log<-c(kl.null.log,kl.log)
+  p.val<-max(which(sort(kl.null.log,decreasing = T)==kl.log))/length(kl.null.log)
+  return(p.val)
+}
+
+#calculate statistic significance
+klDD_Gaussian<-function(expmat_C1,expmat_C2,C1.as.Normal=c(TRUE,FALSE)){
+  n=10000
+  if(C1.as.Normal==TRUE){
+    exp_N<-expmat_C1
+    exp_D<-expmat_C2
+  }else{
+    exp_N<-expmat_C2
+    exp_D<-expmat_C1
+  }
+  expmat<-cbind(exp_D,exp_N)
+  nn<-ncol(exp_N)
+  nd<-ncol(exp_D)
+  KL.null<-apply(exp_N, 1, function(x){
+    muN=mean(x)
+    sdN=sd(x)+0.000001
+    D1<-sapply(c(1:n), function(x){rnorm(nd,muN,sdN)})
+    D2<-sapply(c(1:n), function(x){rnorm(nn,muN,sdN)})
+    D_mat<-rbind(D1,D2)
+    kl.null<-apply(D_mat, 2,function(x){           
+      KL(x[1:nd],x[(nd+1):(nd+nn)])
+    })
+    return(kl.null)
+  })
+  names(KL.null)<-rownames(exp_N)
+  KLs<-apply(expmat, 1, function(y){
+    KL(y[1:nd],y[(nd+1):(nd+nn)])
+  })
+  DKL<-rbind(t(KLs),KL.null)
+  p<-apply(DKL, 2, function(z){
+    p.kl<-p.val(z[1],z[2:n+1])
+    return(p.kl)
+  })
+  res<-data.frame(KL=KLs,p.value=p)
+  res['FDR']<-p.adjust(res$p.value,method = "fdr")
+  res<-res[order(res$KL,decreasing = T),]
+  return(res)
+}
+
+#example
+BLCA_01A<-read.table('BLCA_01A.txt',header = T,row.names = 1)
+BLCA_11A<-read.table('BLCA_11A.txt',header = T,row.names = 1)
+findDDG<-klDD_Gaussian(expmat_C1 = BLCA_11A,expmat_C2 = BLCA_01A,C1.as.Normal = T)
